@@ -1,0 +1,180 @@
+#!/usr/bin/python3
+
+import argparse
+import glob
+import os
+import re
+import urllib.parse
+import xml.etree.ElementTree as etree
+
+# https://tools.ietf.org/html/rfc3986#section-2
+re_url = re.compile(
+    rb'''
+    http://
+    (?:
+      [\[\]:/?#@]  # gen-delims
+    | [!$&'()*+,;=]  # sub-delims
+    | [a-zA-Z0-9._~-]  # unreserved
+    | % [0-9a-fA-F]{2}  # percent-encoding
+    )+
+    ''',
+    re.VERBOSE,
+)
+
+class Rule(object):
+
+    def __init__(self, pattern, repl, *, downgrade=False):
+        # FIXME: Python and JS syntax are not quite compatible
+        self.regexp = re.compile(pattern)
+        self.repl = repl.replace('$', '\\')
+        self.downgrade = downgrade
+
+    def apply(self, url):
+        # FIXME: take .downgrade into account
+        result = self.regexp.sub(self.repl, url)
+        return result
+
+class Ruleset(object):
+
+    class SyntaxError(RuntimeError):
+        pass
+
+    def __init__(self):
+        self.name = None
+        self.platform = None
+        self.default_off = False
+        self.targets = set()
+        self.exclusions = set()
+        self.rules = []
+
+    @classmethod
+    def from_xml_node(cls, node):
+        self = cls()
+        attr = node.attrib.copy()
+        try:
+            self.name = attr.pop('name')
+        except KeyError:
+            raise cls.SyntaxError('missing name for <ruleset>')
+        self.platform = attr.pop('platform', None)
+        self.default_off = attr.pop('default_off', False)
+        if attr:
+            raise cls.SyntaxError(
+                'unexpected <ruleset> attributes: {attr}'.format(
+                    attr=', '.join(attr.keys())
+                )
+            )
+        targets = []
+        for node in node:
+            attr = node.attrib.copy()
+            if node.tag == 'rule':
+                try:
+                    pattern = attr.pop('from')
+                except KeyError:
+                    raise cls.SyntaxError('missing source for <rule>')
+                try:
+                    repl = attr.pop('to')
+                except KeyError:
+                    raise cls.SyntaxError('missing target for <rule>')
+                downgrade = attr.pop('downgrade', False)
+                rule = Rule(pattern, repl, downgrade=downgrade)
+                self.rules += [rule]
+            elif node.tag == 'securecookie':
+                attr.clear()
+            elif node.tag == 'target':
+                try:
+                    host = attr.pop('host')
+                except KeyError:
+                    raise cls.SyntaxError('missing host for <target>')
+                targets += [host]
+            elif node.tag == 'exclusion':
+                try:
+                    pattern = attr.pop('pattern')
+                except KeyError:
+                    raise cls.SyntaxError('missing patter for <exclusion>')
+                self.exclusions.add(pattern)
+            else:
+                raise cls.SyntaxError(
+                    'unexpected <ruleset> child: <{tag}>'.format(
+                        tag=node.tag
+                    )
+                )
+            if attr:
+                raise cls.SyntaxError(
+                    'unexpected <{tag}> attributes: {attr}'.format(
+                        tag=node.tag,
+                        attr=', '.join(attr.keys())
+                    )
+                )
+        self.targets = r'\A(?:{})\Z'.format('|'.join(
+            re.escape(t).replace(re.escape('*'), '.+') for t in targets
+        ))
+        self.targets = re.compile(self.targets)
+        return self
+
+    def is_matching_target(self, domain):
+        return self.targets.match(domain)
+
+    def apply(self, url):
+        # FIXME: take into account .platform, .exclusions, and .default_off
+        if url.startswith('https://'):
+            return url
+        for rule in self.rules:
+            url = rule.apply(url)
+            if url.startswith('https://'):
+                return url
+
+    def __repr__(self):
+        return '<Ruleset {!r}>'.format(self.name)
+
+class RulesetGroup(object):
+
+    def __init__(self):
+        self.rulesets = set()
+
+    def add(self, rs):
+        self.rulesets.add(rs)
+
+    def get_relevant_rulesets(self, url):
+        purl = urllib.parse.urlparse(url)
+        domain = purl.netloc
+        return (
+            rs for rs in self.rulesets
+            if rs.is_matching_target(domain)
+        )
+
+    def apply(self, url):
+        for rs in self.get_relevant_rulesets(url):
+            new_url = rs.apply(url)
+            if new_url is not None:
+                return new_url
+        return url
+
+def load_rulesets(directory):
+    wildcard = os.path.join(directory, '*.xml')
+    rg = RulesetGroup()
+    for path in glob.glob(wildcard):
+        with open(path, 'rb') as ruleset_fp:
+            tree = etree.parse(ruleset_fp)
+            ruleset = Ruleset.from_xml_node(tree.getroot())
+            rg.add(ruleset)
+    return rg
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--ruleset', '-R', metavar='<directory>', required=True)
+    ap.add_argument('paths', metavar='<file>', nargs='+')
+    options = ap.parse_args()
+    rg = load_rulesets(options.ruleset)
+    for path in options.paths:
+        with open(path, 'rb') as file:
+            for line in file:
+                for url in re_url.findall(line):
+                    url = url.decode('ASCII')
+                    new_url = rg.apply(url)
+                    if url != new_url:
+                        print(url, '->', new_url)
+
+if __name__ == '__main__':
+    main()
+
+# vim:ts=4 sw=4 et
