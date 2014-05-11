@@ -23,15 +23,36 @@ re_url = re.compile(
 
 class Rule(object):
 
+    class SyntaxError(RuntimeError):
+        pass
+
+    class SubstError(RuntimeError):
+        pass
+
     def __init__(self, pattern, repl, *, downgrade=False):
         # FIXME: Python and JS syntax are not quite compatible
-        self.regexp = re.compile(pattern)
+        try:
+            pattern = pattern.replace(')?', '|)')
+            self.regexp = re.compile(pattern)
+        except re.error as exc:
+            raise self.SyntaxError(
+                'regexp syntax error: {}: {!r}'.format(exc, pattern)
+            )
         self.repl = repl.replace('$', '\\')
         self.downgrade = downgrade
 
     def apply(self, url):
         # FIXME: take .downgrade into account
-        result = self.regexp.sub(self.repl, url)
+        try:
+            result = self.regexp.sub(self.repl, url)
+        except re.error as exc:
+            raise self.SubstError(
+                'regexp substitution error: {}: {!r} ~ {!r}'.format(
+                    exc,
+                    self.regexp.pattern,
+                    self.repl,
+                )
+            )
         return result
 
 class Ruleset(object):
