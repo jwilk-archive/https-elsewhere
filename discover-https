@@ -136,7 +136,11 @@ class Ruleset(object):
         return self.targets.match(domain)
 
     def apply(self, url):
-        # FIXME: take into account .platform, .exclusions, and .default_off
+        if self.default_off:
+            return url
+        if self.platform is not None:
+            return url
+        # FIXME: take into account .exclusions
         if url.startswith('https://'):
             return url
         for rule in self.rules:
