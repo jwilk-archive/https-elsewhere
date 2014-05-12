@@ -65,7 +65,7 @@ class Ruleset(object):
         self.platform = None
         self.default_off = False
         self.targets = set()
-        self.exclusions = set()
+        self.exclusions = None
         self.rules = []
 
     @classmethod
@@ -85,6 +85,7 @@ class Ruleset(object):
                 )
             )
         targets = []
+        exclusions = []
         for node in node:
             attr = node.attrib.copy()
             if node.tag == 'rule':
@@ -112,7 +113,7 @@ class Ruleset(object):
                     pattern = attr.pop('pattern')
                 except KeyError:
                     raise cls.SyntaxError('missing patter for <exclusion>')
-                self.exclusions.add(pattern)
+                exclusions += [pattern]
             else:
                 raise cls.SyntaxError(
                     'unexpected <ruleset> child: <{tag}>'.format(
@@ -130,6 +131,10 @@ class Ruleset(object):
             re.escape(t).replace(re.escape('*'), '.+') for t in targets
         ))
         self.targets = re.compile(self.targets)
+        if exclusions:
+            # FIXME: Python and JS syntax are not quite compatible
+            self.exclusions = '|'.join(exclusions)
+            self.exclusions = re.compile(self.exclusions)
         return self
 
     def is_matching_target(self, domain):
@@ -140,7 +145,9 @@ class Ruleset(object):
             return url
         if self.platform is not None:
             return url
-        # FIXME: take into account .exclusions
+        if self.exclusions is not None:
+            if self.exclusions.match(url):
+                return url
         if url.startswith('https://'):
             return url
         for rule in self.rules:
