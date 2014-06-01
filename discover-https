@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import errno
 import glob
 import os
 import re
@@ -184,7 +185,10 @@ class RulesetGroup(object):
 def load_rulesets(directory):
     wildcard = os.path.join(directory, '*.xml')
     rg = RulesetGroup()
-    for path in glob.glob(wildcard):
+    paths = glob.glob(wildcard)
+    if not paths:
+        raise OSError(errno.ENOENT, 'no such files', wildcard)
+    for path in paths:
         with open(path, 'rb') as ruleset_fp:
             tree = etree.parse(ruleset_fp)
             ruleset = Ruleset.from_xml_node(tree.getroot())
