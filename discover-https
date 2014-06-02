@@ -239,8 +239,8 @@ def load_rulesets(directory):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--ruleset', '-R', metavar='<directory>', required=True)
-    ap.add_argument('--verbose', '-v', action='store_true')
+    ap.add_argument('--ruleset', '-R', metavar='<directory>', required=True, help='path to HTTPS everywhere rulesets')
+    ap.add_argument('--verbose', '-v', action='store_true', help='be more verbose')
     ap.add_argument('paths', metavar='<file>', nargs='+')
     options = ap.parse_args()
     log.verbose = options.verbose
