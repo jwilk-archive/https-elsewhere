@@ -25,6 +25,7 @@ import errno
 import glob
 import os
 import re
+import sys
 import urllib.parse
 import xml.etree.ElementTree as etree
 
@@ -41,6 +42,27 @@ re_url = re.compile(
     ''',
     re.VERBOSE,
 )
+
+class log(object):
+
+    verbose = None
+    file = sys.stderr
+
+    def msg(self, s, *args, **kwargs):
+        if not self.verbose:
+            return
+        s = s.format(*args, **kwargs)
+        print(s, file=self.file)
+        self.file.flush()
+
+    def start(self, s, *args, **kwargs):
+        s = s.format(*args, **kwargs)
+        print(s, end=' ... ', file=self.file)
+        self.file.flush()
+
+    end = msg
+
+log = log()
 
 class Rule(object):
 
@@ -218,10 +240,15 @@ def load_rulesets(directory):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ruleset', '-R', metavar='<directory>', required=True)
+    ap.add_argument('--verbose', '-v', action='store_true')
     ap.add_argument('paths', metavar='<file>', nargs='+')
     options = ap.parse_args()
+    log.verbose = options.verbose
+    log.start('loading ruleset {}', options.ruleset)
     rg = load_rulesets(options.ruleset)
+    log.end('ok')
     for path in options.paths:
+        log.msg('checking {}', path)
         with open(path, 'rb') as file:
             for line in file:
                 for url in re_url.findall(line):
