@@ -31,7 +31,7 @@ import xml.etree.ElementTree as etree
 
 # https://tools.ietf.org/html/rfc3986#section-2
 re_url = re.compile(
-    rb'''
+    br'''
     http://
     (?:
       [\[\]:/?#@]  # gen-delims
