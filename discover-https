@@ -56,6 +56,8 @@ class log(object):
         self.file.flush()
 
     def start(self, s, *args, **kwargs):
+        if not self.verbose:
+            return
         s = s.format(*args, **kwargs)
         print(s, end=' ... ', file=self.file)
         self.file.flush()
