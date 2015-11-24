@@ -159,6 +159,8 @@ class Ruleset(object):
                 except KeyError:
                     raise cls.SyntaxError('missing patter for <exclusion>')
                 exclusions += [pattern]
+            elif node.tag == 'test':
+                attr.pop('url')
             else:
                 raise cls.SyntaxError(
                     'unexpected <ruleset> child: <{tag}>'.format(
